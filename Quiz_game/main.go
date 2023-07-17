@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func openCSV(filename string) (quests [][]string, err error) {
+func readCSV(filename string) (quests [][]string, err error) {
 	file, err := os.Open(filename)
 	defer func(file *os.File) {
 		err := file.Close()
@@ -20,7 +20,6 @@ func openCSV(filename string) (quests [][]string, err error) {
 		return
 	}
 	reader := csv.NewReader(file)
-
 	quests, err = reader.ReadAll()
 	if err != nil {
 		return
@@ -28,66 +27,46 @@ func openCSV(filename string) (quests [][]string, err error) {
 	return
 }
 
-func runQuiz(breakQuizChan chan bool, answersChan chan string, quests [][]string) error {
-	var answer string
+func runQuiz(score *int, quests [][]string) error {
+	var (
+		answer string
+	)
 
 	for _, q := range quests {
-
 		fmt.Println(q[0])
 		_, err := fmt.Scan(&answer)
 		if err != nil {
 			return err
 		}
-
-		select {
-		case <-breakQuizChan:
-			close(answersChan)
-			return nil
-		default:
-			answersChan <- answer
+		if q[1] == answer {
+			*score++
 		}
-
 	}
-	close(answersChan)
 	return nil
 }
 
-func checkAns(answersChan chan string, quests [][]string) int {
-	var (
-		count, point int
-	)
-	for data := range answersChan {
-		if data == quests[point][1] {
-			count++
-		}
-		point++
-	}
-	return count
-}
-
 func main() {
-	breakQuizChan := make(chan bool, 1)
-	quests, err := openCSV("problems.csv")
+	quests, err := readCSV("problems.csv")
 	if err != nil {
 		log.Fatalf("Unable to open CSV file: %v", err)
 	}
-	answersChan := make(chan string, len(quests))
+	timeoutCh := time.After(5 * time.Second)
 
+	var score int
 	go func() {
-		timer := time.NewTimer(5 * time.Second)
-		<-timer.C
-		fmt.Println("Time Out")
-		breakQuizChan <- true
-		close(breakQuizChan)
+		err = runQuiz(&score, quests)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}()
-
-	err = runQuiz(breakQuizChan, answersChan, quests)
-
 	if err != nil {
 		log.Fatalf("Unable to run quiz: %v", err)
 	}
 
-	count := checkAns(answersChan, quests)
+	select {
+	case <-timeoutCh:
+		fmt.Println("Timeout")
+	}
 
-	fmt.Println(count, len(quests))
+	fmt.Println(score, len(quests))
 }
