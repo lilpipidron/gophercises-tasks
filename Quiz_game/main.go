@@ -8,6 +8,28 @@ import (
 	time2 "time"
 )
 
+func csvOpen(filename string) (quests [][]string, err error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return
+	}
+
+	reader := csv.NewReader(file)
+
+	quests, err = reader.ReadAll()
+	if err != nil {
+		return
+	}
+	return
+}
+
+func timer(dur time2.Duration, breakQuiz chan int) {
+	time := time2.NewTimer(dur * time2.Second)
+	<-time.C
+	fmt.Println("Time Out")
+	breakQuiz <- 1
+}
+
 func main() {
 	var (
 		count  int
@@ -37,26 +59,4 @@ func main() {
 		}
 	}
 	fmt.Println(count, len(quests))
-}
-
-func csvOpen(filename string) (quests [][]string, err error) {
-	file, err := os.Open("problems.csv")
-	if err != nil {
-		return
-	}
-
-	reader := csv.NewReader(file)
-
-	quests, err = reader.ReadAll()
-	if err != nil {
-		return
-	}
-	return
-}
-
-func timer(dur time2.Duration, end chan int) {
-	time := time2.NewTimer(dur * time2.Second)
-	<-time.C
-	fmt.Println("Time Out")
-	end <- 1
 }
