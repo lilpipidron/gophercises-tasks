@@ -5,15 +5,20 @@ import (
 	"fmt"
 	"log"
 	"os"
-	time2 "time"
+	"time"
 )
 
-func csvOpen(filename string) (quests [][]string, err error) {
+func openCSV(filename string) (quests [][]string, err error) {
 	file, err := os.Open(filename)
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			return
+		}
+	}(file)
 	if err != nil {
 		return
 	}
-
 	reader := csv.NewReader(file)
 
 	quests, err = reader.ReadAll()
@@ -23,40 +28,66 @@ func csvOpen(filename string) (quests [][]string, err error) {
 	return
 }
 
-func timer(dur time2.Duration, breakQuiz chan int) {
-	time := time2.NewTimer(dur * time2.Second)
-	<-time.C
-	fmt.Println("Time Out")
-	breakQuiz <- 1
+func runQuiz(breakQuizChan chan bool, answersChan chan string, quests [][]string) error {
+	var answer string
+
+	for _, q := range quests {
+
+		fmt.Println(q[0])
+		_, err := fmt.Scan(&answer)
+		if err != nil {
+			return err
+		}
+
+		select {
+		case <-breakQuizChan:
+			close(answersChan)
+			return nil
+		default:
+			answersChan <- answer
+		}
+
+	}
+	close(answersChan)
+	return nil
+}
+
+func checkAns(answersChan chan string, quests [][]string) int {
+	var (
+		count, point int
+	)
+	for data := range answersChan {
+		if data == quests[point][1] {
+			count++
+		}
+		point++
+	}
+	return count
 }
 
 func main() {
-	var (
-		count  int
-		answer string
-	)
-
-	breakQuiz := make(chan int, 1)
-	quests, err := csvOpen("problems.csv")
+	breakQuizChan := make(chan bool, 1)
+	quests, err := openCSV("problems.csv")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Unable to open CSV file: %v", err)
+	}
+	answersChan := make(chan string, len(quests))
+
+	go func() {
+		timer := time.NewTimer(5 * time.Second)
+		<-timer.C
+		fmt.Println("Time Out")
+		breakQuizChan <- true
+		close(breakQuizChan)
+	}()
+
+	err = runQuiz(breakQuizChan, answersChan, quests)
+
+	if err != nil {
+		log.Fatalf("Unable to run quiz: %v", err)
 	}
 
-	go timer(5, breakQuiz)
-	for _, i := range quests {
-		if len(breakQuiz) != 0 {
-			break
-		}
-		fmt.Println(i[0])
+	count := checkAns(answersChan, quests)
 
-		_, err := fmt.Scan(&answer)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if answer == i[1] {
-			count++
-		}
-	}
 	fmt.Println(count, len(quests))
 }
